@@ -1,78 +1,116 @@
 <?php
 
-
-
 require_once('classes/database.php');
-
-
 require_once('classes/functions.php');
 
-
 $con = new database();
-
 $data = $con->opencon();
 
 $sweetAlertConfig = "";
 if (isset($_POST['multisave'])) {
-  
-  $email = $_POST['email'];
-  $username = $_POST['username'];
-  $password = password_hash($_POST['password'],PASSWORD_BCRYPT);
-  $firstname = $_POST['firstname'];
-  $lastname = $_POST['lastname'];
-  $birthday = $_POST['birthday'];
-  $sex = $_POST['sex'];
-  $phone = $_POST['phone'];
+    // Validate required fields
+    if (empty($_POST['sex'])) {
+        echo "<script>
+            Swal.fire({
+                icon: 'error',
+                title: 'Validation Error',
+                text: 'Please select your sex.'
+            });
+        </script>";
+        error_log("Validation Error: Sex field is empty.");
+    } elseif (empty($_FILES["profile_picture"]["tmp_name"])) {
+        echo "<script>
+            Swal.fire({
+                icon: 'error',
+                title: 'Validation Error',
+                text: 'Please upload a profile picture.'
+            });
+        </script>";
+        error_log("Validation Error: Profile picture is missing.");
+    } else {
+        $email = $_POST['email'];
+        $username = $_POST['username'];
+        $password = password_hash($_POST['password'], PASSWORD_BCRYPT);
+        $firstname = $_POST['firstname'];
+        $lastname = $_POST['lastname'];
+        $birthday = $_POST['birthday'];
+        $sex = $_POST['sex'];
+        $phone = $_POST['phone'];
 
+        // Check for duplicate email
+        $checkEmailQuery = "SELECT COUNT(*) FROM Users WHERE user_email = :email";
+        $stmt = $con->opencon()->prepare($checkEmailQuery);
+        $stmt->execute([':email' => $email]);
+        $emailExists = $stmt->fetchColumn();
 
+        if ($emailExists > 0) {
+            echo "<script>
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Validation Error',
+                    text: 'The email address is already registered.'
+                });
+            </script>";
+            error_log("Validation Error: Duplicate email - " . $email);
+        } else {
+            $profile_picture_path = handleFileUpload($_FILES["profile_picture"]);
 
-  $profile_picture_path = handleFileUpload($_FILES["profile_picture"]);
-  
-  
+            if ($profile_picture_path === false) {
+                echo "<script>
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'File Upload Error',
+                        text: 'Error uploading file. Check the error log for details.'
+                    });
+                </script>";
+                error_log("File Upload Error: Invalid file or upload failed.");
+            } else {
+                $userID = $con->signupUser($firstname, $lastname, $birthday, $email, $sex, $phone, $username, $password, $profile_picture_path);
 
-  if ($profile_picture_path === false) {
-    $_SESSION['error'] = "Sorry, there was an error uploading your file or the file is invalid.";
-  }else{
+                if ($userID === false) { // Check if signupUser returned false
+                    echo "<script>
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Signup Error',
+                            text: 'Error signing up. Please try again.'
+                        });
+                    </script>";
+                    error_log("Signup Error: Failed to insert user.");
+                } else {
+                    $street = $_POST['user_street'];
+                    $barangay = $_POST['user_barangay'];
+                    $city = $_POST['user_city'];
+                    $province = $_POST['user_province'];
 
-    $userID = $con->signupUser($firstname, $lastname, $birthday, $email, $sex, $phone, $username,  $password, $profile_picture_path);
-    
-    if ($userID) {
-      $street = $_POST['user_street'];
-      $barangay = $_POST['user_barangay'];
-      $city = $_POST['user_city'];
-      $province = $_POST['user_province'];
-
-      if ($con->insertAddress($userID, $street, $barangay, $city, $province)){
-        $sweetAlertConfig = "
-        <script>
-        Swal.fire({
-          icon: 'success',
-          title: 'Registration Successful',
-          text: 'Your account has been created succesfully!',
-          confirmButtonText: 'OK'
-        }).then((result) => {
-        if (result.isConfirmed) {
-        window.location.href = 'login.php';
+                    if ($con->insertAddress($userID, $street, $barangay, $city, $province)) {
+                        echo "<script>
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Registration Successful',
+                                text: 'Your account has been created successfully!',
+                                confirmButtonText: 'OK'
+                            }).then((result) => {
+                                if (result.isConfirmed) {
+                                    window.location.href = 'login.php';
+                                }
+                            });
+                        </script>";
+                    } else {
+                        echo "<script>
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Address Error',
+                                text: 'Error occurred while inserting address. Please try again.'
+                            });
+                        </script>";
+                        error_log("Address Insertion Error: Failed to insert address.");
+                    }
+                }
+            }
         }
-        });
-        </script> ";
-      }else{
-        $_SESSION['error'] = "Error occured while inserting address. Please try again.";
-      }
-
-    }else{
-      $_SESSION['error'] = "Sorry, there wan an error signing up.";
     }
-
-  }
-
 }
-
 ?>
-
-
-
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -124,14 +162,13 @@ if (!empty($sweetAlertConfig)) {
       <div class="card mt-4">
         <div class="card-header bg-info text-white">Account Information</div>
         <div class="card-body">
-
-        <div class="form-group">
+          <div class="form-group">
             <label for="username">Username:</label>
             <input type="text" class="form-control" name="username" id="username" placeholder="Enter username" required>
             <div class="valid-feedback">Looks good!</div>
             <div class="invalid-feedback">Please enter a valid username.</div>
             <div id="usernameFeedback" class="invalid-feedback"></div> <!-- New feedback div -->
-        </div>
+          </div>
           <div class="form-group">
             <label for="email">Email:</label>
             <input type="email" class="form-control" id="email" name="email" placeholder="Enter email" required>
@@ -154,7 +191,7 @@ if (!empty($sweetAlertConfig)) {
           </div>
         </div>
       </div>
-      <button type="button" id="nextButton" class="btn btn-primary mt-3" onclick="nextStep()">Next</button>
+      <button type="button" id="nextButton" class="btn btn-primary mt-3" onclick="nextStepWithAlert()">Next</button>
     </div>
 
     <!-- Step 2 -->
@@ -207,8 +244,8 @@ if (!empty($sweetAlertConfig)) {
           </div>
         </div>
       </div>
-      <button type="button" class="btn btn-secondary mt-3" onclick="prevStep()">Previous</button>
-      <button type="button" class="btn btn-primary mt-3" onclick="nextStep()">Next</button>
+      <button type="button" class="btn btn-secondary mt-3" onclick="prevStepWithAlert()">Previous</button>
+      <button type="button" class="btn btn-primary mt-3" onclick="nextStepWithAlert()">Next</button>
     </div>
 
     <!-- Step 3 -->
@@ -254,15 +291,59 @@ if (!empty($sweetAlertConfig)) {
           </div>
         </div>
       </div>
-      <button type="button" class="btn btn-secondary mt-3" onclick="prevStep()">Previous</button>
+      <button type="button" class="btn btn-secondary mt-3" onclick="prevStepWithAlert()">Previous</button>
       <button type="submit" name="multisave" class="btn btn-primary mt-3">Sign Up</button>
-      <a class="btn btn-outline-danger mt-3" href="index.php">Go Back</a>
+      <button type="button" class="btn btn-outline-danger mt-3" onclick="goBackWithAlert()">Go Back</button>
     </div>
   </form>
 </div>
 
+<script>
+function nextStepWithAlert() {
+    Swal.fire({
+        icon: 'info',
+        title: 'Proceed to Next Step',
+        text: 'Are you sure you want to proceed to the next step?',
+        showCancelButton: true,
+        confirmButtonText: 'Yes',
+        cancelButtonText: 'No'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            nextStep(); // Call the existing nextStep function
+        }
+    });
+}
 
+function prevStepWithAlert() {
+    Swal.fire({
+        icon: 'info',
+        title: 'Go Back to Previous Step',
+        text: 'Are you sure you want to go back to the previous step?',
+        showCancelButton: true,
+        confirmButtonText: 'Yes',
+        cancelButtonText: 'No'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            prevStep(); // Call the existing prevStep function
+        }
+    });
+}
 
+function goBackWithAlert() {
+    Swal.fire({
+        icon: 'warning',
+        title: 'Go Back',
+        text: 'Are you sure you want to leave this page? Unsaved changes will be lost.',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Go Back',
+        cancelButtonText: 'No'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = 'index.php'; // Redirect to the index page
+        }
+    });
+}
+</script>
 <script src="./bootstrap-5.3.3-dist/js/bootstrap.js"></script>
 <!-- Script for Address Selector -->
 <script src="ph-address-selector.js"></script>
@@ -384,8 +465,81 @@ function validateStep(step) {
     });
   </script>
 
+<script>
+$(document).ready(function(){
+    function toggleNextButton(isEnabled) {
+        $('#nextButton').prop('disabled', !isEnabled);
+    }
 
+    // Email validation
+    $('#email').on('input', function(){
+        var email = $(this).val();
+        if (email.length > 0) {
+            $.ajax({
+                url: 'AJAX/check_email.php',
+                method: 'POST',
+                data: { email: email },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.exists) {
+                        $('#email').removeClass('is-valid').addClass('is-invalid');
+                        $('#emailFeedback').text('Email is already taken.').show();
+                        $('#email')[0].setCustomValidity('Email is already taken.');
+                        toggleNextButton(false);
+                    } else {
+                        $('#email').removeClass('is-invalid').addClass('is-valid');
+                        $('#emailFeedback').text('').hide();
+                        $('#email')[0].setCustomValidity('');
+                        toggleNextButton(true);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('An error occurred: ' + error);
+                }
+            });
+        } else {
+            $('#email').removeClass('is-valid is-invalid');
+            $('#emailFeedback').text('').hide();
+            $('#email')[0].setCustomValidity('');
+            toggleNextButton(false);
+        }
+    });
+
+    // Username validation
+    $('#username').on('input', function(){
+        var username = $(this).val();
+        if (username.length > 0) {
+            $.ajax({
+                url: 'AJAX/check_username.php',
+                method: 'POST',
+                data: { username: username },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.exists) {
+                        $('#username').removeClass('is-valid').addClass('is-invalid');
+                        $('#usernameFeedback').text('Username is already taken.').show();
+                        $('#username')[0].setCustomValidity('Username is already taken.');
+                        toggleNextButton(false);
+                    } else {
+                        $('#username').removeClass('is-invalid').addClass('is-valid');
+                        $('#usernameFeedback').text('').hide();
+                        $('#username')[0].setCustomValidity('');
+                        toggleNextButton(true);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('An error occurred: ' + error);
+                }
+            });
+        } else {
+            $('#username').removeClass('is-valid is-invalid');
+            $('#usernameFeedback').text('').hide();
+            $('#username')[0].setCustomValidity('');
+            toggleNextButton(false);
+        }
+    });
+});
+</script>
   
   </body>
   </html>
-  
